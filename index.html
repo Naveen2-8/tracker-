@@ -1233,26 +1233,41 @@
                 renderGrid();
                 renderCompleted();
 
-                var earned = S.entries.filter(function(e) { return e.customerId === c.id; })
-                                      .reduce(function(sum, e) { return sum + e.bags * e.rate; }, 0);
-                var profit = earned - (c.investment || 0);
-                var text = "Job Complete for " + c.name + ". Total Investment: Rs " + plainNum(c.investment) + ". Total Earned: Rs " + plainNum(earned) + ". Net Profit: Rs " + plainNum(profit) + ".";
-                
-                // --- Task 2: Automation (CSV to SMS/WhatsApp) via Supabase ---
                 var custEntries = S.entries.filter(function(e) { return e.customerId === c.id; });
+                var earned = 0;
+                var totalBags = 0;
+                custEntries.forEach(function(e) {
+                    earned += (e.bags * e.rate);
+                    totalBags += (parseFloat(e.bags) || 0);
+                });
                 
-                console.log("Preparing to send data to Supabase Edge Function for WhatsApp delivery...");
+                var inv = parseFloat(c.investment) || 0;
+                var diff = earned - inv;
+                var profit = diff > 0 ? diff : 0;
+                var loss = diff < 0 ? Math.abs(diff) : 0;
 
-                // Call the Supabase Edge Function (if configured)
+                var d = new Date();
+                var day = ("0" + d.getDate()).slice(-2);
+                var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                var dateStr = day + " " + monthNames[d.getMonth()] + " " + d.getFullYear();
+
+                var message = "✅ JOB COMPLETED: " + c.name + "\n" +
+                              "📅 Date: " + dateStr + "\n" +
+                              "---------------------------\n" +
+                              "📊 SUMMARY:\n" +
+                              "Total Bags: " + totalBags + "\n" +
+                              "Investment: Rs " + plainNum(inv) + "\n" +
+                              "Profit: Rs " + plainNum(profit) + "\n" +
+                              "Loss: Rs " + plainNum(loss) + "\n" +
+                              "---------------------------\n" +
+                              "Final Total: Rs " + plainNum(earned);
+                
+                console.log("Preparing to send text message to Supabase Edge Function...");
+
                 if (supabase) {
                     const payload = {
                         phone: "7604865472",
-                        customerName: c.name,
-                        earned: earned,
-                        investment: c.investment || 0,
-                        profit: profit,
-                        text: text,
-                        entries: custEntries
+                        message: message
                     };
 
                     supabase.functions.invoke('send-whatsapp', {
@@ -1260,38 +1275,17 @@
                     }).then(function(response) {
                         if (response.error) {
                             console.error("Supabase Edge Function Error:", response.error);
-                            toast("Error sending WhatsApp message via Supabase.");
+                            toast("Error sending message via Supabase.");
                         } else {
                             console.log("Supabase Edge Function Success:", response.data);
-                            toast('"' + c.name + '" marked as complete & summary sent via Twilio!');
+                            toast('"' + c.name + '" marked as complete & text sent!');
                         }
                     }).catch(function(err) {
                         console.error("Network or invocation error:", err);
                     });
                 } else {
-                    console.log("Supabase not configured. Falling back to local CSV download and manual WhatsApp.");
-                    
-                    // Fallback: Generate local CSV
-                    var csvContent = "Date,Bags,Rate,Total (Rs)\n";
-                    custEntries.forEach(function(e) {
-                        var t = e.bags * e.rate;
-                        csvContent += e.date + "," + e.bags + "," + e.rate + "," + t + "\n";
-                    });
-                    csvContent += "Total,,," + earned + "\n";
-                    if (c.investment) csvContent += "Investment,,," + c.investment + "\n";
-                    csvContent += "Profit,,," + profit + "\n";
-
-                    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                    var link = document.createElement("a");
-                    var url = URL.createObjectURL(blob);
-                    link.setAttribute("href", url);
-                    link.setAttribute("download", c.name.replace(/\s+/g, '_') + "_Ledger.csv");
-                    link.style.visibility = 'hidden';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-
-                    var waUrl = "https://wa.me/917604865472?text=" + encodeURIComponent(text);
+                    console.log("Supabase not configured. Falling back to manual WhatsApp open.");
+                    var waUrl = "https://wa.me/917604865472?text=" + encodeURIComponent(message);
                     window.open(waUrl, '_blank');
                     toast('"' + c.name + '" marked as complete (Fallback Mode).');
                 }
