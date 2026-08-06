@@ -793,7 +793,7 @@
                 <div class="card-head" style="flex-wrap: wrap; gap: 8px;">
                     <h2 class="card-label">Active Customers</h2>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <button id="openArchiveBtn" class="btn btn-light" style="font-size:0.85rem; padding:10px 16px; position:relative;">View Archive <span id="archiveCountBadge" style="display:none; margin-left:4px; background:var(--green-600); color:#fff; font-size:0.68rem; font-weight:700; padding:1px 7px; border-radius:10px;">0</span></button>
+                        <button id="openArchiveBtn" class="btn btn-light" style="font-size:0.85rem; padding:10px 16px; position:relative;">📂 View Data Archive <span id="archiveCountBadge" style="display:none; margin-left:4px; background:var(--green-600); color:#fff; font-size:0.68rem; font-weight:700; padding:1px 7px; border-radius:10px;">0</span></button>
                         <button id="openAddCustomerBtn" class="btn btn-green">+ Add Customer</button>
                     </div>
                 </div>
@@ -1236,9 +1236,17 @@
                 var custEntries = S.entries.filter(function(e) { return e.customerId === c.id; });
                 var earned = 0;
                 var totalBags = 0;
+                var entryBreakdown = "";
+                
                 custEntries.forEach(function(e) {
                     earned += (e.bags * e.rate);
                     totalBags += (parseFloat(e.bags) || 0);
+                    
+                    var ed = e.date ? new Date(e.date) : new Date();
+                    var eday = ("0" + ed.getDate()).slice(-2);
+                    var emonth = ("0" + (ed.getMonth() + 1)).slice(-2);
+                    var ey = ed.getFullYear();
+                    entryBreakdown += "[" + eday + "-" + emonth + "-" + ey + "]: " + e.bags + " Bags\n";
                 });
                 
                 var inv = parseFloat(c.investment) || 0;
@@ -1246,13 +1254,10 @@
                 var profit = diff > 0 ? diff : 0;
                 var loss = diff < 0 ? Math.abs(diff) : 0;
 
-                var d = new Date();
-                var day = ("0" + d.getDate()).slice(-2);
-                var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-                var dateStr = day + " " + monthNames[d.getMonth()] + " " + d.getFullYear();
-
                 var message = "✅ JOB COMPLETED: " + c.name + "\n" +
-                              "📅 Date: " + dateStr + "\n" +
+                              "---------------------------\n" +
+                              "📅 ENTRY BREAKDOWN:\n" +
+                              entryBreakdown +
                               "---------------------------\n" +
                               "📊 SUMMARY:\n" +
                               "Total Bags: " + totalBags + "\n" +
@@ -1329,6 +1334,26 @@
             rate: rate
         });
         save();
+        
+        // --- Task 2: New SMS Trigger for "Save Entry" ---
+        var ed = date ? new Date(date) : new Date();
+        var eday = ("0" + ed.getDate()).slice(-2);
+        var emonth = ("0" + (ed.getMonth() + 1)).slice(-2);
+        var ey = ed.getFullYear();
+        var savedDateFmt = eday + "-" + emonth + "-" + ey;
+        
+        var entryMessage = "🆕 NEW ENTRY SAVED:\n" +
+                           "Customer: " + currentActiveCustomer.name + "\n" +
+                           "Date: [" + savedDateFmt + "]\n" +
+                           "Added: " + bags + " Bags";
+
+        if (supabase) {
+            supabase.functions.invoke('send-whatsapp', {
+                body: { phone: "7604865472", message: entryMessage }
+            }).catch(function(err) {
+                console.error("Save Entry SMS error:", err);
+            });
+        }
 
         numBags.value = '';
         rateBag.value = '';
