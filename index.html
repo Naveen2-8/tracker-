@@ -14,6 +14,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <style>
         /* ================================================================
            RESET & TOKENS
@@ -931,7 +934,21 @@
 (function () {
     'use strict';
 
-    /* ───── Storage ───── */
+    // --- SUPABASE INITIALIZATION ---
+    // Note: Replace these with your actual Supabase project URL and anon key from your dashboard
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    
+    // Check if the developer replaced the placeholders before initializing to prevent errors
+    let supabase = null;
+    if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log("Supabase client initialized successfully.");
+    } else {
+        console.warn("Supabase client NOT initialized. Please enter your URL and Anon Key.");
+    }
+
+    /* ───── State Management (localStorage) ───── */
     var STORE = 'harvest_ledger_v4';
 
     function load() {
@@ -1221,48 +1238,65 @@
                 var profit = earned - (c.investment || 0);
                 var text = "Job Complete for " + c.name + ". Total Investment: Rs " + plainNum(c.investment) + ". Total Earned: Rs " + plainNum(earned) + ". Net Profit: Rs " + plainNum(profit) + ".";
                 
-                // --- Task 2: Automation (CSV to SMS/WhatsApp) ---
-                // 1. Generate CSV Data
+                // --- Task 2: Automation (CSV to SMS/WhatsApp) via Supabase ---
                 var custEntries = S.entries.filter(function(e) { return e.customerId === c.id; });
-                var csvContent = "Date,Bags,Rate,Total (Rs)\n";
-                custEntries.forEach(function(e) {
-                    var t = e.bags * e.rate;
-                    csvContent += e.date + "," + e.bags + "," + e.rate + "," + t + "\n";
-                });
-                csvContent += "Total,,," + earned + "\n";
-                if (c.investment) csvContent += "Investment,,," + c.investment + "\n";
-                csvContent += "Profit,,," + profit + "\n";
-
-                // Create a Blob file
-                var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 
-                // 2. API Integration Logic (Frontend Hook)
-                var formData = new FormData();
-                formData.append("phone", "7604865472");
-                formData.append("message", text);
-                formData.append("file", blob, c.name.replace(/\s+/g, '_') + "_Ledger.csv");
+                console.log("Preparing to send data to Supabase Edge Function for WhatsApp delivery...");
 
-                // Note to User: Replace this URL with your actual backend webhook (e.g. Twilio or WhatsApp Business API endpoint)
-                // fetch("https://your-backend.com/api/send-whatsapp", {
-                //     method: "POST",
-                //     body: formData
-                // }).then(res => res.json()).then(data => console.log("Sent:", data)).catch(err => console.error("Error:", err));
-                
-                // Auto-download locally for the user as a backup summary
-                var link = document.createElement("a");
-                var url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                link.setAttribute("download", c.name.replace(/\s+/g, '_') + "_Ledger.csv");
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                // Call the Supabase Edge Function (if configured)
+                if (supabase) {
+                    const payload = {
+                        phone: "7604865472",
+                        customerName: c.name,
+                        earned: earned,
+                        investment: c.investment || 0,
+                        profit: profit,
+                        text: text,
+                        entries: custEntries
+                    };
 
-                // Fallback / Existing Manual WA Open
-                var waUrl = "https://wa.me/917604865472?text=" + encodeURIComponent(text);
-                window.open(waUrl, '_blank');
+                    supabase.functions.invoke('send-whatsapp', {
+                        body: payload
+                    }).then(function(response) {
+                        if (response.error) {
+                            console.error("Supabase Edge Function Error:", response.error);
+                            toast("Error sending WhatsApp message via Supabase.");
+                        } else {
+                            console.log("Supabase Edge Function Success:", response.data);
+                            toast('"' + c.name + '" marked as complete & summary sent via Twilio!');
+                        }
+                    }).catch(function(err) {
+                        console.error("Network or invocation error:", err);
+                    });
+                } else {
+                    console.log("Supabase not configured. Falling back to local CSV download and manual WhatsApp.");
+                    
+                    // Fallback: Generate local CSV
+                    var csvContent = "Date,Bags,Rate,Total (Rs)\n";
+                    custEntries.forEach(function(e) {
+                        var t = e.bags * e.rate;
+                        csvContent += e.date + "," + e.bags + "," + e.rate + "," + t + "\n";
+                    });
+                    csvContent += "Total,,," + earned + "\n";
+                    if (c.investment) csvContent += "Investment,,," + c.investment + "\n";
+                    csvContent += "Profit,,," + profit + "\n";
+
+                    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    var link = document.createElement("a");
+                    var url = URL.createObjectURL(blob);
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", c.name.replace(/\s+/g, '_') + "_Ledger.csv");
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    var waUrl = "https://wa.me/917604865472?text=" + encodeURIComponent(text);
+                    window.open(waUrl, '_blank');
+                    toast('"' + c.name + '" marked as complete (Fallback Mode).');
+                }
+
                 closeEntryModal();
-                toast('"' + c.name + '" marked as complete & CSV downloaded!');
             }
         });
     }
