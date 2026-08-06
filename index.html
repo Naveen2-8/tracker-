@@ -134,9 +134,10 @@
         .card {
             background: #ffffff; /* Pure white for maximum readability over the dark overlay */
             border-radius: var(--radius-lg);
-            padding: 24px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10);
+            padding: 32px 24px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.22), 0 4px 16px rgba(0,0,0,0.12);
             border: 1px solid rgba(255, 255, 255, 0.95);
+            transition: all 0.3s ease;
         }
 
         .card-head {
@@ -256,22 +257,23 @@
             background: var(--white);
             border: 2px solid var(--cream-300);
             border-radius: var(--radius-md);
-            padding: 16px 12px;
+            padding: 20px 14px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.2s var(--ease);
+            transition: all 0.3s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.03);
         }
 
         .cust-card:hover {
             border-color: var(--green-400);
             background: var(--green-50);
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-sm);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.1);
         }
 
         .cust-avatar {
@@ -444,7 +446,7 @@
             border: none;
             border-radius: var(--radius-md);
             cursor: pointer;
-            transition: all 0.2s var(--ease);
+            transition: all 0.3s ease;
             -webkit-tap-highlight-color: transparent;
             user-select: none;
             white-space: nowrap;
@@ -1218,10 +1220,49 @@
                                       .reduce(function(sum, e) { return sum + e.bags * e.rate; }, 0);
                 var profit = earned - (c.investment || 0);
                 var text = "Job Complete for " + c.name + ". Total Investment: Rs " + plainNum(c.investment) + ". Total Earned: Rs " + plainNum(earned) + ". Net Profit: Rs " + plainNum(profit) + ".";
-                var url = "https://wa.me/917604865472?text=" + encodeURIComponent(text);
-                window.open(url, '_blank');
+                
+                // --- Task 2: Automation (CSV to SMS/WhatsApp) ---
+                // 1. Generate CSV Data
+                var custEntries = S.entries.filter(function(e) { return e.customerId === c.id; });
+                var csvContent = "Date,Bags,Rate,Total (Rs)\n";
+                custEntries.forEach(function(e) {
+                    var t = e.bags * e.rate;
+                    csvContent += e.date + "," + e.bags + "," + e.rate + "," + t + "\n";
+                });
+                csvContent += "Total,,," + earned + "\n";
+                if (c.investment) csvContent += "Investment,,," + c.investment + "\n";
+                csvContent += "Profit,,," + profit + "\n";
+
+                // Create a Blob file
+                var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                
+                // 2. API Integration Logic (Frontend Hook)
+                var formData = new FormData();
+                formData.append("phone", "7604865472");
+                formData.append("message", text);
+                formData.append("file", blob, c.name.replace(/\s+/g, '_') + "_Ledger.csv");
+
+                // Note to User: Replace this URL with your actual backend webhook (e.g. Twilio or WhatsApp Business API endpoint)
+                // fetch("https://your-backend.com/api/send-whatsapp", {
+                //     method: "POST",
+                //     body: formData
+                // }).then(res => res.json()).then(data => console.log("Sent:", data)).catch(err => console.error("Error:", err));
+                
+                // Auto-download locally for the user as a backup summary
+                var link = document.createElement("a");
+                var url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", c.name.replace(/\s+/g, '_') + "_Ledger.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Fallback / Existing Manual WA Open
+                var waUrl = "https://wa.me/917604865472?text=" + encodeURIComponent(text);
+                window.open(waUrl, '_blank');
                 closeEntryModal();
-                toast('"' + c.name + '" marked as complete & moved to Archive!');
+                toast('"' + c.name + '" marked as complete & CSV downloaded!');
             }
         });
     }
